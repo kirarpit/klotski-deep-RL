@@ -3,6 +3,7 @@ from piece import Piece
 from gym.spaces import Box, Discrete
 from utils import setup_logger
 import gym
+import time
 
 HEIGHT = 5
 WIDTH = 4
@@ -20,6 +21,7 @@ class KlotskiEnv(gym.Env):
         self.action_space = Discrete(NUM_PIECES*NUM_ACTION_PER_PIECE)
         self.observation_space = Box(0, NUM_PIECES, (HEIGHT*WIDTH, ), np.int)
         self._step_cnt = 0
+        self.viewer = None
 
     def step(self, action):
         self._step_cnt += 1
@@ -82,8 +84,44 @@ class KlotskiEnv(gym.Env):
     def play(self, piece_id, action):
         self.step(piece_id*NUM_ACTION_PER_PIECE + action)
 
-    def close(self):
-        pass
-
     def render(self, mode='human'):
-        pass
+        from gym.envs.classic_control import rendering
+        sf = 100
+        margin = 0.1
+
+        if self.viewer is None:
+            self.viewer = rendering.Viewer(WIDTH*sf, HEIGHT*sf)
+
+        # colors = [(19, 124, 201), (171, 209, 217), (234, 203, 253), (253, 126, 127)]
+        colors = [(0, 0, 255), (0, 255, 0), (139, 0, 139), (255, 0, 0)]
+        color_mapping = {7: 0, 4: 0, 9: 0, 6: 0, 0: 1, 1: 1, 2: 1, 3: 1, 5: 2, 8: 3}
+
+        for piece_id in range(NUM_PIECES):
+            cells = list(self.pieces[piece_id].get_occupied_cells())
+            cells.sort()
+            cell = cells[0]
+            color = colors[color_mapping[piece_id]]
+
+            if piece_id in [7, 4, 9, 6]:
+                deltas = [(0, 0), (0, 1), (2, 1), (2, 0)]
+            elif piece_id in [0, 1, 2, 3]:
+                deltas = [(0, 0), (0, 1), (1, 1), (1, 0)]
+            elif piece_id == 5:
+                deltas = [(0, 0), (0, 2), (1, 2), (1, 0)]
+            else:
+                deltas = [(0, 0), (0, 2), (2, 2), (2, 0)]
+
+            margins = [(margin, margin), (margin, -margin), (-margin, -margin), (-margin, margin)]
+            deltas = [(delta[0]+margin[0], delta[1]+margin[1]) for delta, margin in list(zip(deltas, margins))]
+            vertices = [(cell[0] + delta[0], cell[1] + delta[1]) for delta in deltas]
+            vertices = [(v[1]*sf, (HEIGHT-v[0])*sf) for v in vertices]
+            self.viewer.draw_polygon(vertices, color=color)
+
+        if mode == 'human':
+            time.sleep(1/50)
+
+        return self.viewer.render(return_rgb_array=mode == 'rgb_array')
+
+    def close(self):
+        if self.viewer:
+            self.viewer.close()
