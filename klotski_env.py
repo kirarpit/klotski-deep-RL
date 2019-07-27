@@ -64,6 +64,7 @@ class KlotskiEnv(gym.Env):
     def reset(self):
         self.state = np.zeros((HEIGHT, WIDTH), dtype=np.int)
         self.pieces = {}
+        self._step_cnt = 0
         for piece_id in range(NUM_PIECES):
             piece = Piece.init_piece(piece_id)
             self.pieces[piece_id] = piece
