@@ -23,7 +23,7 @@ tune.run(
     name="klotski",
     config={
         "env": "klotski",
-        "num_workers": 20,
+        "num_workers": 1,
         "sample_batch_size": 64,
         "train_batch_size": 4096,
         "sgd_minibatch_size": 512,

@@ -9,23 +9,29 @@ HEIGHT = 5
 WIDTH = 4
 NUM_PIECES = 10
 NUM_ACTION_PER_PIECE = 4
-MAX_STEPS = 1000
+MAX_STEPS = 5000
 
 log = setup_logger("env")
 
 
 class KlotskiEnv(gym.Env):
+    REWARDS = {"max_steps": 0,
+               "novel_state": 0.1,
+               "invalid_move": 0,
+               "solved": 10}
+
     def __init__(self):
         self.state = None
         self.pieces = None
         self.action_space = Discrete(NUM_PIECES*NUM_ACTION_PER_PIECE)
         self.observation_space = Box(0, NUM_PIECES, (HEIGHT*WIDTH, ), np.int)
-        self._step_cnt = 0
+        self._step_cnt = None
         self.viewer = None
+        self.visited_states = None
 
     def step(self, action):
         self._step_cnt += 1
-        reward = 2
+        reward = 0
         done = False
         piece_id = action//NUM_ACTION_PER_PIECE
         action_direction = action - piece_id*NUM_ACTION_PER_PIECE
@@ -48,23 +54,31 @@ class KlotskiEnv(gym.Env):
 
         # check if terminal condition and set reward
         if self._step_cnt >= MAX_STEPS:
-            reward = -1
+            reward = self.REWARDS["max_steps"]
             done = True
         else:
             if not is_valid_move:
-                reward = -1
+                reward = self.REWARDS["invalid_move"]
             elif (self.state[3][1] == DAUGHTER_PIECE_IDS[0] and self.state[3][2] == DAUGHTER_PIECE_IDS[0] and
                   self.state[4][1] == DAUGHTER_PIECE_IDS[0] and self.state[4][2] == DAUGHTER_PIECE_IDS[0]):
-                reward = 10
+                reward = self.REWARDS["solved"]
                 done = True
 
         log.debug("action {}, Game state {}, reward {}, is_terminal {}".format(action, self.state, reward, done))
-        return self.get_state(), reward, done, {}
+        next_state = self.get_state()
+
+        # Check if previously visited. Reward if not.
+        if next_state.tostring() not in self.visited_states:
+            self.visited_states.add(next_state.tostring())
+            reward = self.REWARDS["novel_state"]
+
+        return next_state, reward, done, {}
 
     def reset(self):
         self.state = np.zeros((HEIGHT, WIDTH), dtype=np.int)
         self.pieces = {}
         self._step_cnt = 0
+        self.visited_states = set()
         for piece_id in range(NUM_PIECES):
             piece = Piece.init_piece(piece_id)
             self.pieces[piece_id] = piece

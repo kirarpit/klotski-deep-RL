@@ -61,6 +61,7 @@ class Piece:
 
         # get color
         color = None
+        vertices = None
         for piece_type in PIECE_TYPES:
             if piece_id in piece_type:
                 color = PIECE_COLORS[PIECE_TYPES.index(piece_type)]
