@@ -26,6 +26,7 @@ class KlotskiEnv(gym.Env):
         self.action_space = Discrete(NUM_PIECES*NUM_ACTION_PER_PIECE)
         self.observation_space = Box(0, NUM_PIECES, (HEIGHT*WIDTH, ), np.int)
         self._step_cnt = None
+        self.is_over = None
         self.viewer = None
         self.visited_states = None
 
@@ -37,27 +38,20 @@ class KlotskiEnv(gym.Env):
         action_direction = action - piece_id*NUM_ACTION_PER_PIECE
 
         # check if valid move
-        current_cells = self.pieces[piece_id].get_occupied_cells()
-        new_cells = self.pieces[piece_id].get_new_occupied_cells(action_direction)
-        new_vertex_cells = new_cells - current_cells
-        old_vertex_cells = current_cells - new_cells
-        is_valid_move = len(new_vertex_cells) == sum([int(0 <= cell[0] < HEIGHT and
-                                                          0 <= cell[1] < WIDTH and
-                                                          self.state[cell[0]][cell[1]] == EMPTY_CELL_ID)
-                                                      for cell in new_vertex_cells])
+        is_valid_action, new_delta_cells, old_delta_cells = self.is_valid_action(action)
 
         # update game state
-        if is_valid_move:
+        if is_valid_action:
             self.pieces[piece_id].step(action_direction)
-            self.mark_cells(new_vertex_cells, piece_id)
-            self.mark_cells(old_vertex_cells, EMPTY_CELL_ID)
+            self.mark_cells(new_delta_cells, piece_id)
+            self.mark_cells(old_delta_cells, EMPTY_CELL_ID)
 
         # check if terminal condition and set reward
         if self._step_cnt >= MAX_STEPS:
             reward = self.REWARDS["max_steps"]
             done = True
         else:
-            if not is_valid_move:
+            if not is_valid_action:
                 reward = self.REWARDS["invalid_move"]
             elif (self.state[3][1] == DAUGHTER_PIECE_IDS[0] and self.state[3][2] == DAUGHTER_PIECE_IDS[0] and
                   self.state[4][1] == DAUGHTER_PIECE_IDS[0] and self.state[4][2] == DAUGHTER_PIECE_IDS[0]):
@@ -72,12 +66,14 @@ class KlotskiEnv(gym.Env):
             self.visited_states.add(next_state.tostring())
             reward = self.REWARDS["novel_state"]
 
+        self.is_over = done
         return next_state, reward, done, {}
 
     def reset(self):
         self.state = np.zeros((HEIGHT, WIDTH), dtype=np.int)
         self.pieces = {}
         self._step_cnt = 0
+        self.is_over = False
         self.visited_states = set()
         for piece_id in range(NUM_PIECES):
             piece = Piece.init_piece(piece_id)
@@ -89,6 +85,19 @@ class KlotskiEnv(gym.Env):
 
         return self.get_state()
 
+    def is_valid_action(self, action):
+        piece_id = action//NUM_ACTION_PER_PIECE
+        action_direction = action - piece_id*NUM_ACTION_PER_PIECE
+        current_cells = self.pieces[piece_id].get_occupied_cells()
+        new_cells = self.pieces[piece_id].get_new_occupied_cells(action_direction)
+        new_delta_cells = new_cells - current_cells
+        old_delta_cells = current_cells - new_cells
+        is_valid_action = len(new_delta_cells) == sum([int(0 <= cell[0] < HEIGHT and
+                                                           0 <= cell[1] < WIDTH and
+                                                           self.state[cell[0]][cell[1]] == EMPTY_CELL_ID)
+                                                       for cell in new_delta_cells])
+        return is_valid_action, new_delta_cells, old_delta_cells
+
     def get_state(self):
         return np.ravel(self.state)
 
@@ -98,6 +107,16 @@ class KlotskiEnv(gym.Env):
 
     def play(self, piece_id, action):
         self.step(piece_id*NUM_ACTION_PER_PIECE + action)
+
+    def get_state_id(self):
+        return self.state.tostring()
+
+    def get_valid_actions(self):
+        valid_actions = []
+        for action in range(NUM_PIECES*NUM_ACTION_PER_PIECE):
+            if self.is_valid_action(action):
+                valid_actions.append(action)
+        return valid_actions
 
     def render(self, mode='human'):
         from gym.envs.classic_control import rendering
