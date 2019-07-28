@@ -4,8 +4,6 @@ from gym.spaces import Box, Discrete
 from utils import setup_logger
 import gym
 import time
-import os.path
-import pickle
 
 HEIGHT = 5
 WIDTH = 4
@@ -31,12 +29,6 @@ class KlotskiEnv(gym.Env):
         self.is_over = None
         self.viewer = None
         self.visited_states = None
-
-        if os.path.exists('state_depth.pickle'):
-            with open('state_depth.pickle', 'rb') as handle:
-                self.state_depth = pickle.load(handle)
-        else:
-            self.state_depth = None
 
     def step(self, action):
         self._step_cnt += 1
@@ -74,9 +66,7 @@ class KlotskiEnv(gym.Env):
             self.visited_states.add(self.get_state_id())
             reward += self.REWARDS["novel_state"]
 
-        if self.state_depth is not None:
-            depth = self.state_depth[self.get_simple_state()]
-            info = {"depth": depth}
+        info["simple_state"] = self.get_simple_state()
 
         self.is_over = done
         return self.get_state(), reward, done, info
@@ -160,7 +150,7 @@ class KlotskiEnv(gym.Env):
             self.viewer.draw_polygon(vertices, color=color)
 
         if mode == 'human':
-            time.sleep(1/50)
+            time.sleep(1/100)
 
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
 

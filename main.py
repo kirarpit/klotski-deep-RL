@@ -2,8 +2,9 @@ import ray
 from ray import tune
 from ray.tune.registry import register_env
 import sys
-import os
 from klotski_env import KlotskiEnv
+import os.path
+import pickle
 import numpy as np
 
 head_ip = None
@@ -19,6 +20,12 @@ if not ray.is_initialized():
 
 register_env("klotski", lambda env_config: KlotskiEnv())
 
+# Load state_depth dictionary
+state_depth = None
+if os.path.exists('state_depth.pickle'):
+    with open('state_depth.pickle', 'rb') as handle:
+        state_depth = pickle.load(handle)
+
 
 def on_episode_start(info):
     episode = info["episode"]
@@ -28,8 +35,8 @@ def on_episode_start(info):
 def on_episode_step(info):
     episode = info["episode"]
     info = episode.last_info_for()
-    if info is not None and "depth" in info:
-        episode.user_data["depth"].append(info["depth"])
+    if info is not None and "simple_state" in info:
+        episode.user_data["depth"].append(state_depth[info["simple_state"]])
 
 
 def on_episode_end(info):
