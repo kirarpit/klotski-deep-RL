@@ -17,10 +17,11 @@ PIECE_VERTICES = [[(0, 0), (0, 1), (1, 1), (1, 0)],
 class Piece:
     ACTION_DELTAS = {0: (-1, 0), 1: (0, 1), 2: (0, -1), 3: (1, 0)}
 
-    def __init__(self, cells, color, vertices):
+    def __init__(self, cells, color, vertices, piece_type_id):
         self._occupied_cells = set(cells)
         self.color = color
         self.vertices = vertices
+        self.piece_type_id = piece_type_id
 
     @staticmethod
     def init_piece(piece_id):
@@ -62,12 +63,15 @@ class Piece:
         # get color
         color = None
         vertices = None
+        piece_type_id = None
         for piece_type in PIECE_TYPES:
             if piece_id in piece_type:
-                color = PIECE_COLORS[PIECE_TYPES.index(piece_type)]
-                vertices = PIECE_VERTICES[PIECE_TYPES.index(piece_type)]
+                piece_type_id = PIECE_TYPES.index(piece_type)
+                color = PIECE_COLORS[piece_type_id]
+                vertices = PIECE_VERTICES[piece_type_id]
+                break
 
-        return Piece(cells, color, vertices)
+        return Piece(cells, color, vertices, piece_type_id)
 
     @staticmethod
     def get_empty_cells():
@@ -91,6 +95,9 @@ class Piece:
 
     def get_vertices(self):
         return self.vertices
+
+    def get_piece_type_id(self):
+        return self.piece_type_id
 
     def get_new_occupied_cells(self, action):
         dx, dy = self.ACTION_DELTAS[action]

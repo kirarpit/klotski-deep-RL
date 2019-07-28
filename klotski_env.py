@@ -59,15 +59,14 @@ class KlotskiEnv(gym.Env):
                 done = True
 
         log.debug("action {}, Game state {}, reward {}, is_terminal {}".format(action, self.state, reward, done))
-        next_state = self.get_state()
 
         # Check if previously visited. Reward if not.
-        if next_state.tostring() not in self.visited_states:
-            self.visited_states.add(next_state.tostring())
-            reward = self.REWARDS["novel_state"]
+        if self.get_state_id() not in self.visited_states:
+            self.visited_states.add(self.get_state_id())
+            reward += self.REWARDS["novel_state"]
 
         self.is_over = done
-        return next_state, reward, done, {}
+        return self.get_state(), reward, done, {}
 
     def reset(self):
         self.state = np.zeros((HEIGHT, WIDTH), dtype=np.int)
@@ -101,6 +100,15 @@ class KlotskiEnv(gym.Env):
     def get_state(self):
         return np.ravel(self.state)
 
+    def get_simple_state(self):
+        state = []
+        for piece_id in self.get_state():
+            if piece_id != EMPTY_CELL_ID:
+                state.append(self.pieces[piece_id].get_piece_type_id())
+            else:
+                state.append(piece_id)
+        return str(state)
+
     def mark_cells(self, cells, piece_id):
         for cell in cells:
             self.state[cell[0]][cell[1]] = piece_id
@@ -109,12 +117,12 @@ class KlotskiEnv(gym.Env):
         self.step(piece_id*NUM_ACTION_PER_PIECE + action)
 
     def get_state_id(self):
-        return self.state.tostring()
+        return str(self.get_state())
 
     def get_valid_actions(self):
         valid_actions = []
         for action in range(NUM_PIECES*NUM_ACTION_PER_PIECE):
-            if self.is_valid_action(action):
+            if self.is_valid_action(action)[0]:
                 valid_actions.append(action)
         return valid_actions
 
