@@ -4,6 +4,7 @@ from ray.tune.registry import register_env
 import sys
 import os
 from klotski_env import KlotskiEnv
+import numpy as np
 
 head_ip = None
 if len(sys.argv) > 1:
@@ -17,6 +18,24 @@ if not ray.is_initialized():
         ray.init()
 
 register_env("klotski", lambda env_config: KlotskiEnv())
+
+
+def on_episode_start(info):
+    episode = info["episode"]
+    episode.user_data["depth"] = []
+
+
+def on_episode_step(info):
+    episode = info["episode"]
+    info = episode.last_info_for()
+    if info is not None and "depth" in info:
+        episode.user_data["depth"].append(info["depth"])
+
+
+def on_episode_end(info):
+    episode = info["episode"]
+    episode.custom_metrics["max_depth"] = np.max(episode.user_data["depth"])
+
 
 tune.run(
     "PPO",
@@ -33,6 +52,11 @@ tune.run(
         "env_config": {},
         "model": {
             "fcnet_hiddens": [64, 64],
+        },
+        "callbacks": {
+            "on_episode_start": tune.function(on_episode_start),
+            "on_episode_step": tune.function(on_episode_step),
+            "on_episode_end": tune.function(on_episode_end),
         },
     },
     stop={

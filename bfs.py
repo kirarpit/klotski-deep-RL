@@ -1,6 +1,7 @@
 from klotski_env import KlotskiEnv
 import copy
 import time
+import pickle
 
 env = KlotskiEnv()
 env.reset()
@@ -33,3 +34,6 @@ while len(queue):
 
         if new_env.get_simple_state() not in visited_states:
             queue.append((new_env, level+1))
+
+with open('state_depth.pickle', 'wb') as handle:
+    pickle.dump(state_depth, handle, protocol=pickle.HIGHEST_PROTOCOL)
