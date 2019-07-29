@@ -18,7 +18,7 @@ if not ray.is_initialized():
     else:
         ray.init()
 
-register_env("klotski", lambda env_config: KlotskiEnv())
+register_env("klotski", lambda env_config: KlotskiEnv(env_config))
 
 # Load state_depth dictionary
 state_depth = None
@@ -56,7 +56,9 @@ tune.run(
         "num_sgd_iter": 10,
         "observation_filter": "MeanStdFilter",
         "batch_mode": "complete_episodes",
-        "env_config": {},
+        "env_config": {
+            "novelty_scheme": "frequency",
+        },
         "model": {
             "fcnet_hiddens": [64, 64],
         },

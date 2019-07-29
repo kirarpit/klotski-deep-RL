@@ -34,7 +34,7 @@ Example Usage via executable:
 #
 # ModelCatalog.register_custom_model("pa_model", ParametricActionsModel)
 # register_env("pa_cartpole", lambda _: ParametricActionCartpole(10))
-register_env("klotski", lambda env_config: KlotskiEnv())
+register_env("klotski", lambda env_config: KlotskiEnv(env_config))
 
 
 def create_parser(parser_creator=None):

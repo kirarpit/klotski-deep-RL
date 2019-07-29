@@ -1,7 +1,7 @@
 import numpy as np
 from piece import Piece, EMPTY_CELL_ID, DAUGHTER_PIECE_IDS
 from gym.spaces import Box, Discrete
-from utils import setup_logger
+from utils import setup_logger, merge_dicts
 import gym
 import time
 
@@ -9,18 +9,31 @@ HEIGHT = 5
 WIDTH = 4
 NUM_PIECES = 10
 NUM_ACTION_PER_PIECE = 4
-MAX_STEPS = 5000
 
 log = setup_logger("env")
 
+ENV_DEFAULT_CONFIG = {
+    "max_steps": 5000,
+    "rewards": {
+        "max_steps": 0,
+        "novel_state": 0.1,
+        "invalid_move": 0,
+        "solved": 10
+    },
+    # Could take values from ["naive", "frequency"]
+    "novelty_scheme": "naive",
+}
+
 
 class KlotskiEnv(gym.Env):
-    REWARDS = {"max_steps": 0,
-               "novel_state": 0.1,
-               "invalid_move": 0,
-               "solved": 10}
 
-    def __init__(self):
+    def __init__(self, config):
+        # check if all env_config keys are in default config
+        custom_keys = config.keys()
+        if not all(key in ENV_DEFAULT_CONFIG for key in custom_keys):
+            raise KeyError("Custom environment configuration not found in default configuration.")
+        self.config = merge_dicts(ENV_DEFAULT_CONFIG, config)
+
         self.state = None
         self.pieces = None
         self.action_space = Discrete(NUM_PIECES*NUM_ACTION_PER_PIECE)
@@ -28,7 +41,11 @@ class KlotskiEnv(gym.Env):
         self._step_cnt = None
         self.is_over = None
         self.viewer = None
-        self.visited_states = None
+
+        if self.config["novelty_scheme"] == "naive":
+            self.visited_states = set()
+        else:
+            self.visited_states = {}
 
     def step(self, action):
         self._step_cnt += 1
@@ -48,25 +65,33 @@ class KlotskiEnv(gym.Env):
             self.mark_cells(old_delta_cells, EMPTY_CELL_ID)
 
         # check if terminal condition and set reward
-        if self._step_cnt >= MAX_STEPS:
-            reward = self.REWARDS["max_steps"]
+        if self._step_cnt >= self.config["max_steps"]:
+            reward = self.config["rewards"]["max_steps"]
             done = True
         else:
             if not is_valid_action:
-                reward = self.REWARDS["invalid_move"]
+                reward = self.config["rewards"]["invalid_move"]
             elif (self.state[3][1] == DAUGHTER_PIECE_IDS[0] and self.state[3][2] == DAUGHTER_PIECE_IDS[0] and
                   self.state[4][1] == DAUGHTER_PIECE_IDS[0] and self.state[4][2] == DAUGHTER_PIECE_IDS[0]):
-                reward = self.REWARDS["solved"]
+                reward = self.config["rewards"]["solved"]
                 done = True
 
         log.debug("action {}, Game state {}, reward {}, is_terminal {}".format(action, self.state, reward, done))
 
-        # Check if previously visited. Reward if not.
-        if self.get_state_id() not in self.visited_states:
-            self.visited_states.add(self.get_state_id())
-            reward += self.REWARDS["novel_state"]
+        simple_state = self.get_simple_state()
+        info["simple_state"] = simple_state
 
-        info["simple_state"] = self.get_simple_state()
+        # Check if previously visited. Reward if not.
+        if self.config["novelty_scheme"] == "naive":
+            if simple_state not in self.visited_states:
+                self.visited_states.add(simple_state)
+                reward += self.config["rewards"]["novel_state"]
+        else:
+            if simple_state not in self.visited_states:
+                self.visited_states[simple_state] = 1
+            else:
+                self.visited_states[simple_state] += 1
+            reward += max(0, (1 - self.visited_states[simple_state]/100)*self.config["rewards"]["novel_state"])
 
         self.is_over = done
         return self.get_state(), reward, done, info
@@ -76,7 +101,10 @@ class KlotskiEnv(gym.Env):
         self.pieces = {}
         self._step_cnt = 0
         self.is_over = False
-        self.visited_states = set()
+
+        if self.config["novelty_scheme"] == "naive":
+            self.visited_states = set()
+
         for piece_id in range(NUM_PIECES):
             piece = Piece.init_piece(piece_id)
             self.pieces[piece_id] = piece
