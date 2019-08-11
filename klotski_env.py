@@ -16,6 +16,7 @@ ENV_DEFAULT_CONFIG = {
     "max_steps": 5000,
     "rewards": {
         "max_steps": 0,
+        "per_step_penalty": -0.01,
         "novel_state": 0.1,
         "invalid_move": 0,
         "solved": 10
@@ -29,8 +30,7 @@ class KlotskiEnv(gym.Env):
 
     def __init__(self, config):
         # check if all env_config keys are in default config
-        custom_keys = config.keys()
-        if not all(key in ENV_DEFAULT_CONFIG for key in custom_keys):
+        if not all(key in ENV_DEFAULT_CONFIG for key in config.keys()):
             raise KeyError("Custom environment configuration not found in default configuration.")
         self.config = merge_dicts(ENV_DEFAULT_CONFIG, config)
 
@@ -49,7 +49,7 @@ class KlotskiEnv(gym.Env):
 
     def step(self, action):
         self._step_cnt += 1
-        reward = 0
+        reward = self.config["rewards"]["per_step_penalty"]
         done = False
         info = {}
         piece_id = action//NUM_ACTION_PER_PIECE
@@ -66,14 +66,14 @@ class KlotskiEnv(gym.Env):
 
         # check if terminal condition and set reward
         if self._step_cnt >= self.config["max_steps"]:
-            reward = self.config["rewards"]["max_steps"]
+            reward += self.config["rewards"]["max_steps"]
             done = True
         else:
             if not is_valid_action:
-                reward = self.config["rewards"]["invalid_move"]
+                reward += self.config["rewards"]["invalid_move"]
             elif (self.state[3][1] == DAUGHTER_PIECE_IDS[0] and self.state[3][2] == DAUGHTER_PIECE_IDS[0] and
                   self.state[4][1] == DAUGHTER_PIECE_IDS[0] and self.state[4][2] == DAUGHTER_PIECE_IDS[0]):
-                reward = self.config["rewards"]["solved"]
+                reward += self.config["rewards"]["solved"]
                 done = True
 
         log.debug("action {}, Game state {}, reward {}, is_terminal {}".format(action, self.state, reward, done))

@@ -44,12 +44,17 @@ def on_episode_end(info):
     episode.custom_metrics["max_depth"] = np.max(episode.user_data["depth"])
 
 
+checkpoint = None
+if len(sys.argv) > 2:
+    checkpoint = sys.argv[2]
+
 tune.run(
     "PPO",
     name="klotski",
+    restore=checkpoint,
     config={
         "env": "klotski",
-        "num_workers": 1,
+        "num_workers": 10,
         "sample_batch_size": 64,
         "train_batch_size": 4096,
         "sgd_minibatch_size": 512,
@@ -57,7 +62,7 @@ tune.run(
         "observation_filter": "MeanStdFilter",
         "batch_mode": "complete_episodes",
         "env_config": {
-            "novelty_scheme": "frequency",
+            "novelty_scheme": "naive",
         },
         "model": {
             "fcnet_hiddens": [64, 64],

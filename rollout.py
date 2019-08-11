@@ -7,17 +7,16 @@ import collections
 import json
 import os
 import pickle
+import numpy as np
 
 import gym
-from gym.wrappers import Monitor
 import ray
 from ray.rllib.agents.registry import get_agent_class
-from ray.rllib.env import MultiAgentEnv
 from ray.rllib.env.base_env import _DUMMY_AGENT_ID
 from ray.rllib.evaluation.sample_batch import DEFAULT_POLICY_ID
 from ray.tune.util import merge_dicts
 from ray.tune.registry import register_env
-from ray.rllib.models import ModelCatalog
+from ray.rllib.evaluation.policy_graph import clip_action
 from klotski_env import KlotskiEnv
 
 EXAMPLE_USAGE = """
@@ -29,11 +28,6 @@ Example Usage via executable:
     ./rollout.py /tmp/ray/checkpoint_dir/checkpoint-0 --run DQN
     --env CartPole-v0 --steps 1000000 --out rollouts.pkl
 """
-
-# Note: if you use any custom models or envs, register them here first, e.g.:
-#
-# ModelCatalog.register_custom_model("pa_model", ParametricActionsModel)
-# register_env("pa_cartpole", lambda _: ParametricActionCartpole(10))
 register_env("klotski", lambda env_config: KlotskiEnv(env_config))
 
 
@@ -51,7 +45,6 @@ def create_parser(parser_creator=None):
     required_named.add_argument(
         "--run",
         type=str,
-        required=True,
         help="The algorithm or model to train. This may refer to the name "
              "of a built-on algorithm (e.g. RLLib's DQN or PPO), or a "
              "user-defined trainable function or class registered in the "
@@ -64,9 +57,11 @@ def create_parser(parser_creator=None):
         action="store_const",
         const=True,
         help="Surpress rendering of the environment.")
-    parser.add_argument(
-        "--steps", default=10000, help="Number of steps to roll out.")
+    parser.add_argument("--steps", default=1e10, help="Number of steps to roll out.")
+    parser.add_argument("--episodes", default=100, help="Number of episodes to roll out.")
     parser.add_argument("--out", default=None, help="Output filename.")
+    parser.add_argument("--sample-action", default=False, action="store_const", const=True,
+                        help="Choose best action or sample action")
     parser.add_argument(
         "--config",
         default="{}",
@@ -76,7 +71,7 @@ def create_parser(parser_creator=None):
     return parser
 
 
-def run(args, parser):
+def get_config(args):
     config = {}
     # Load configuration from file
     config_dir = os.path.dirname(args.checkpoint)
@@ -93,20 +88,20 @@ def run(args, parser):
             config = pickle.load(f)
     if "num_workers" in config:
         config["num_workers"] = min(2, config["num_workers"])
+    config["num_gpus"] = 0
     config = merge_dicts(config, args.config)
     if not args.env:
         if not config.get("env"):
-            parser.error("the following arguments are required: --env")
+            raise ValueError("the following arguments are required: --env")
         args.env = config.get("env")
+    return config
 
-    ray.init()
 
+def get_agent(args, config):
     cls = get_agent_class(args.run)
-    config["monitor"] = True
     agent = cls(env=args.env, config=config)
     agent.restore(args.checkpoint)
-    num_steps = int(args.steps)
-    rollout(agent, args.env, num_steps, args.out, args.no_render)
+    return agent
 
 
 class DefaultMapping(collections.defaultdict):
@@ -117,24 +112,16 @@ class DefaultMapping(collections.defaultdict):
         return value
 
 
-def default_policy_agent_mapping(unused_agent_id):
-    return DEFAULT_POLICY_ID
-
-
-def rollout(agent, env_name, num_steps, out=None, no_render=True):
-    policy_agent_mapping = default_policy_agent_mapping
+def rollout(agent, env_name, num_steps, num_episodes, out=None, no_render=True, sample_action=False):
+    def policy_agent_mapping(x):
+        return DEFAULT_POLICY_ID
 
     if hasattr(agent, "local_evaluator"):
         env = agent.local_evaluator.env
-        if isinstance(env, Monitor):
-            multiagent = isinstance(env.env, MultiAgentEnv)
-        else:
-            multiagent = isinstance(env, MultiAgentEnv)
         multiagent = False
 
         if agent.local_evaluator.multiagent:
-            policy_agent_mapping = agent.config["multiagent"][
-                "policy_mapping_fn"]
+            policy_agent_mapping = agent.config["multiagent"]["policy_mapping_fn"]
 
         policy_map = agent.local_evaluator.policy_map
         state_init = {p: m.get_initial_state() for p, m in policy_map.items()}
@@ -148,23 +135,23 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
         multiagent = False
         use_lstm = {DEFAULT_POLICY_ID: False}
 
-    # env = Monitor(env, 'videos/')
-    if out is not None:
-        rollouts = []
-    steps = 0
-    while steps < (num_steps or steps + 1):
+    rollout_data = []
+    total_timesteps = 0
+    episodes = 0
+
+    # one rollout
+    while (total_timesteps < (num_steps or total_timesteps + 1)) and episodes < num_episodes:
         mapping_cache = {}  # in case policy_agent_mapping is stochastic
-        if out is not None:
-            rollout = []
         obs = env.reset()
-        agent_states = DefaultMapping(
-            lambda agent_id: state_init[mapping_cache[agent_id]])
-        prev_actions = DefaultMapping(
-            lambda agent_id: action_init[mapping_cache[agent_id]])
+        agent_states = DefaultMapping(lambda x: state_init[mapping_cache[x]])
+        prev_actions = DefaultMapping(lambda x: action_init[mapping_cache[x]])
         prev_rewards = collections.defaultdict(lambda: 0.)
         done = False
-        reward_total = 0.0
-        while not done and steps < (num_steps or steps + 1):
+        total_reward = 0.0
+        steps_this_episode = 0
+
+        # one episode
+        while not done and total_timesteps < (num_steps or total_timesteps + 1):
             multi_obs = obs if multiagent else {_DUMMY_AGENT_ID: obs}
             action_dict = {}
             for agent_id, a_obs in multi_obs.items():
@@ -181,11 +168,22 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
                             policy_id=policy_id)
                         agent_states[agent_id] = p_state
                     else:
-                        a_action = agent.compute_action(
-                            a_obs,
-                            prev_action=prev_actions[agent_id],
-                            prev_reward=prev_rewards[agent_id],
-                            policy_id=policy_id)
+                        if not sample_action:
+                            policy = agent.get_policy(policy_id)
+                            preprocessed = agent.local_evaluator.preprocessors[policy_id].transform(a_obs)
+                            filtered_obs = agent.local_evaluator.filters[policy_id](preprocessed, update=False)
+                            a_action = policy.sess.run(policy.logits,
+                                                       feed_dict={
+                                                           policy.observations: np.expand_dims(filtered_obs, 0)
+                                                       })[0]
+                            a_action = clip_action(a_action, env.action_space)
+                            a_action = np.argmax(a_action)
+                        else:
+                            a_action = agent.compute_action(
+                                a_obs,
+                                prev_action=prev_actions[agent_id],
+                                prev_reward=prev_rewards[agent_id],
+                                policy_id=policy_id)
                     action_dict[agent_id] = a_action
                     prev_actions[agent_id] = a_action
             action = action_dict
@@ -200,24 +198,36 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
 
             if multiagent:
                 done = done["__all__"]
-                reward_total += sum(reward.values())
+                total_reward += list(reward.values())[0]
             else:
-                reward_total += reward
+                total_reward += reward
             if not no_render:
                 env.render()
-            if out is not None:
-                rollout.append([obs, action, next_obs, reward, done])
-            steps += 1
+            total_timesteps += 1
+            steps_this_episode += 1
             obs = next_obs
+
         if out is not None:
-            rollouts.append(rollout)
-        print("Episode reward", reward_total)
+            rollout_data.append([total_reward, steps_this_episode])
+        print("Episode reward", total_reward)
+        episodes += 1
 
     if out is not None:
-        pickle.dump(rollouts, open(out, "wb"))
+        pickle.dump(rollout_data, open(out, "wb"))
+
+    return rollout_data
 
 
 if __name__ == "__main__":
+    ray.init(num_cpus=2, num_gpus=0, object_store_memory=int(5e+9), redis_max_memory=int(2e+9))
     parser = create_parser()
     args = parser.parse_args()
-    run(args, parser)
+    config = get_config(args)
+    agent = get_agent(args, config)
+    rollout(agent,
+            args.env,
+            int(args.steps),
+            int(args.episodes),
+            out=args.out,
+            no_render=args.no_render,
+            sample_action=args.sample_action)
