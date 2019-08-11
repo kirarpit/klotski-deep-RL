@@ -91,7 +91,7 @@ class KlotskiEnv(gym.Env):
                 self.visited_states[simple_state] = 1
             else:
                 self.visited_states[simple_state] += 1
-            reward += max(0, (1 - self.visited_states[simple_state]/100)*self.config["rewards"]["novel_state"])
+            reward += (self.visited_states[simple_state]**(-0.5))*self.config["rewards"]["novel_state"]
 
         self.is_over = done
         return self.get_state(), reward, done, info

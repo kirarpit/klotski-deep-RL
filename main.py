@@ -54,18 +54,25 @@ tune.run(
     restore=checkpoint,
     config={
         "env": "klotski",
-        "num_workers": 10,
+        "num_workers": 1,
         "sample_batch_size": 64,
         "train_batch_size": 4096,
         "sgd_minibatch_size": 512,
         "num_sgd_iter": 10,
         "observation_filter": "MeanStdFilter",
         "batch_mode": "complete_episodes",
+        "lambda": 0.98,
         "env_config": {
-            "novelty_scheme": "naive",
+            "novelty_scheme": "frequency",
+            "rewards": {
+                "invalid_move": -0.01,
+                "max_steps": -0.01,
+                "per_step_penalty": 0,
+            }
         },
         "model": {
             "fcnet_hiddens": [64, 64],
+            "fcnet_activation": "relu",
         },
         "callbacks": {
             "on_episode_start": tune.function(on_episode_start),
