@@ -58,27 +58,11 @@ class KlotskiEnv(gym.Env):
         # check if valid move
         is_valid_action, new_delta_cells, old_delta_cells = self.is_valid_action(action)
 
+        # update game state if valid move
         if is_valid_action:
-            # update game state
             self.pieces[piece_id].step(action_direction)
             self.mark_cells(new_delta_cells, piece_id)
             self.mark_cells(old_delta_cells, EMPTY_CELL_ID)
-
-            # give curiosity reward
-            simple_state = self.get_simple_state()
-            info["simple_state"] = simple_state
-            if self.config["novelty_scheme"] == "naive":
-                if simple_state not in self.visited_states:
-                    self.visited_states.add(simple_state)
-                    reward += self.config["rewards"]["novel_state"]
-            else:
-                if simple_state not in self.visited_states:
-                    self.visited_states[simple_state] = 1
-                else:
-                    self.visited_states[simple_state] += 1
-                reward += (self.visited_states[simple_state]**(-0.5))*self.config["rewards"]["novel_state"]
-        else:
-            reward += self.config["rewards"]["invalid_move"]
 
         # check if terminal condition and set reward
         if self._step_cnt >= self.config["max_steps"]:
@@ -89,9 +73,29 @@ class KlotskiEnv(gym.Env):
             reward += self.config["rewards"]["solved"]
             done = True
 
+        simple_state = self.get_simple_state()
+        info["simple_state"] = simple_state
+
+        if not done:
+            if is_valid_action:
+                # give curiosity reward
+                if self.config["novelty_scheme"] == "naive":
+                    if simple_state not in self.visited_states:
+                        self.visited_states.add(simple_state)
+                        reward += self.config["rewards"]["novel_state"]
+                else:
+                    if simple_state not in self.visited_states:
+                        self.visited_states[simple_state] = 1
+                    else:
+                        self.visited_states[simple_state] += 1
+                    reward += (self.visited_states[simple_state]**(-0.5))*self.config["rewards"]["novel_state"]
+            else:
+                reward += self.config["rewards"]["invalid_move"]
+
         log.debug("action {}, Game state {}, reward {}, is_terminal {}".format(action, self.state, reward, done))
 
         self.is_over = done
+        info["visited_states_cnt"] = len(self.visited_states)
         return self.get_state(), reward, done, info
 
     def reset(self):

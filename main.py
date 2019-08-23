@@ -42,6 +42,7 @@ def on_episode_step(info):
 def on_episode_end(info):
     episode = info["episode"]
     episode.custom_metrics["max_depth"] = np.max(episode.user_data["depth"])
+    episode.custom_metrics["visited_states_cnt"] = episode.last_info_for()["visited_states_cnt"]
 
 
 checkpoint = None
@@ -59,14 +60,15 @@ tune.run(
         "train_batch_size": 4096,
         "sgd_minibatch_size": 512,
         "num_sgd_iter": 10,
-        "observation_filter": "MeanStdFilter",
         "batch_mode": "complete_episodes",
         "lambda": 0.98,
         "env_config": {
+            "max_steps": 5000,
             "novelty_scheme": "frequency",
             "rewards": {
-                "invalid_move": -0.01,
-                "max_steps": -0.01,
+                "invalid_move": 0,
+                "max_steps": -1,
+                "novel_state": 1,
                 "per_step_penalty": 0,
             }
         },
