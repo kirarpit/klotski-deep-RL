@@ -2,7 +2,7 @@ import ray
 from ray import tune
 from ray.tune.registry import register_env
 import sys
-from klotski_env import KlotskiEnv
+from env import KlotskiEnv
 import os.path
 import pickle
 import numpy as np
@@ -57,13 +57,13 @@ tune.run(
         "env": "klotski",
         "num_workers": 1,
         "sample_batch_size": 64,
-        "train_batch_size": 4096,
-        "sgd_minibatch_size": 512,
+        "train_batch_size": 200,
+        "sgd_minibatch_size": 32,
         "num_sgd_iter": 10,
         "batch_mode": "complete_episodes",
         "lambda": 0.98,
         "env_config": {
-            "max_steps": 5000,
+            "max_steps": 500,
             "novelty_scheme": "frequency",
             "rewards": {
                 "invalid_move": 0,

@@ -1,4 +1,4 @@
-from klotski_env import KlotskiEnv
+from env import KlotskiEnv
 import copy
 import time
 import pickle
@@ -25,7 +25,7 @@ while len(queue):
     state_depth[current_env.get_simple_state()] = level
     visited_states.add(current_env.get_simple_state())
 
-    if current_env.is_over:
+    if current_env.solved:
         continue
 
     for action in current_env.get_valid_actions():

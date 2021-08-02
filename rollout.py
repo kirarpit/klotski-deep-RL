@@ -17,7 +17,7 @@ from ray.rllib.evaluation.sample_batch import DEFAULT_POLICY_ID
 from ray.tune.util import merge_dicts
 from ray.tune.registry import register_env
 from ray.rllib.evaluation.policy_graph import clip_action
-from klotski_env import KlotskiEnv
+from env import KlotskiEnv
 
 EXAMPLE_USAGE = """
 Example Usage via RLlib CLI:
